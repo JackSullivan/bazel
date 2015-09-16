@@ -21,6 +21,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
 import com.google.devtools.build.lib.cmdline.PackageIdentifier;
 import com.google.devtools.build.lib.cmdline.PackageIdentifier.RepositoryName;
 import com.google.devtools.build.lib.events.Event;
@@ -516,7 +517,14 @@ public class PackageFunction implements SkyFunction {
    */
   private boolean fetchIncludeRepositoryDeps(Environment env, BuildFileAST ast) {
     boolean ok = true;
-    for (Label label : ast.getIncludes()) {
+    for (String include : ast.getIncludes()) {
+      Label label;
+      try {
+        label = Label.parseAbsolute(include);
+      } catch (LabelSyntaxException e) {
+        // Ignore. This will be reported when the BUILD file is actually evaluated.
+        continue;
+      }
       if (!label.getPackageIdentifier().getRepository().isDefault()) {
         // If this is the default repository, the include refers to the same repository, whose
         // RepositoryValue is already a dependency of this PackageValue.
@@ -800,9 +808,22 @@ public class PackageFunction implements SkyFunction {
             packageId, packageLocator);
         Preprocessor.Result preprocessingResult = preprocessCache.getIfPresent(packageId);
         if (preprocessingResult == null) {
-          preprocessingResult = replacementSource == null
-              ? packageFactory.preprocess(packageId, buildFilePath, inputSource, globber)
-              : Preprocessor.Result.noPreprocessing(replacementSource);
+          try {
+            preprocessingResult =
+                replacementSource == null
+                    ? packageFactory.preprocess(packageId, inputSource, globber)
+                    : Preprocessor.Result.noPreprocessing(replacementSource);
+          } catch (IOException e) {
+            env
+                .getListener()
+                .handle(
+                    Event.error(
+                        Location.fromFile(buildFilePath),
+                        "preprocessing failed: " + e.getMessage()));
+            throw new PackageFunctionException(
+                new BuildFileContainsErrorsException(packageId, "preprocessing failed", e),
+                Transience.TRANSIENT);
+          }
           preprocessCache.put(packageId, preprocessingResult);
         }
 

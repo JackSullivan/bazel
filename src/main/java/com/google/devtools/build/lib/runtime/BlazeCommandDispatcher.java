@@ -361,7 +361,7 @@ public class BlazeCommandDispatcher {
       System.setErr(new PrintStream(reporterOutErr.getErrorStream(), /*autoflush=*/true));
 
       for (BlazeModule module : runtime.getBlazeModules()) {
-        module.checkRuntime(runtime);
+        module.checkEnvironment(env);
       }
 
       if (commonOptions.announceRcOptions) {
@@ -387,7 +387,7 @@ public class BlazeCommandDispatcher {
       }
 
       ExitCode outcome = command.exec(env, optionsParser);
-      outcome = runtime.precompleteCommand(env, outcome);
+      outcome = env.precompleteCommand(outcome);
       numericExitCode = outcome.getNumericExitCode();
       return numericExitCode;
     } catch (ShutdownBlazeServerException e) {

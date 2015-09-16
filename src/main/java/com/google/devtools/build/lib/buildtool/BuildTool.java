@@ -181,7 +181,7 @@ public final class BuildTool {
             request.getMultiCpus(), request.getViewOptions().keepGoing);
 
       env.getEventBus().post(new ConfigurationsCreatedEvent(configurations));
-      runtime.throwPendingException();
+      env.throwPendingException();
       if (configurations.getTargetConfigurations().size() == 1) {
         // TODO(bazel-team): This is not optimal - we retain backwards compatibility in the case
         // where there's only a single configuration, but we don't send an event in the multi-config
@@ -376,7 +376,7 @@ public final class BuildTool {
           throws LoadingFailedException, TargetParsingException, InterruptedException,
           AbruptExitException {
     Profiler.instance().markPhase(ProfilePhase.LOAD);
-    runtime.throwPendingException();
+    env.throwPendingException();
 
     initializeOutputFilter(request);
 
@@ -399,8 +399,8 @@ public final class BuildTool {
     LoadingResult result = runtime.getLoadingPhaseRunner().execute(getReporter(),
         env.getEventBus(), request.getTargets(), request.getLoadingOptions(),
         runtime.createBuildOptions(request).getAllLabels(), keepGoing,
-        request.shouldRunTests(), callback);
-    runtime.throwPendingException();
+        isLoadingEnabled(request), request.shouldRunTests(), callback);
+    env.throwPendingException();
     return result;
   }
 
@@ -448,7 +448,8 @@ public final class BuildTool {
                 request.getViewOptions(),
                 request.getTopLevelArtifactContext(),
                 env.getReporter(),
-                env.getEventBus());
+                env.getEventBus(),
+                isLoadingEnabled(request));
 
     // TODO(bazel-team): Merge these into one event.
     env.getEventBus().post(new AnalysisPhaseCompleteEvent(analysisResult.getTargetsToBuild(),
@@ -583,12 +584,19 @@ public final class BuildTool {
           if (!keepGoing) {
             throw new ViewCreationFailedException("Build aborted due to licensing error");
           }
-       }
+        }
       }
     }
   }
 
   private Reporter getReporter() {
     return env.getReporter();
+  }
+
+  private static boolean isLoadingEnabled(BuildRequest request) {
+    boolean enableLoadingFlag = !request.getViewOptions().interleaveLoadingAndAnalysis;
+    // TODO(bazel-team): should return false when fdo optimization is enabled, because in that case,
+    // we would require packages to be set before analysis phase. See FdoSupport#prepareToBuild.
+    return enableLoadingFlag;
   }
 }

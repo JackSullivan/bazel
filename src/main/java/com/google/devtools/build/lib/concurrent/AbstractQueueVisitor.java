@@ -121,7 +121,7 @@ public class AbstractQueueVisitor {
    * important to save the first one as it may be more informative than a
    * subsequent one, and this is not a performance-critical path.
    */
-  private Throwable unhandled = null;
+  private volatile Throwable unhandled = null;
 
   /**
    * An uncaught exception when submitting a job to the ThreadPool is catastrophic, and usually
@@ -186,7 +186,9 @@ public class AbstractQueueVisitor {
   private final boolean ownThreadPool;
 
   /**
-   * Flag used to record when all threads were killed by failed action execution
+   * Flag used to record when all threads were killed by failed action execution.
+   *
+   * <p>May only be accessed in a synchronized block.
    */
   private boolean jobsMustBeStopped = false;
 
@@ -363,8 +365,9 @@ public class AbstractQueueVisitor {
    * rethrown, since it may indicate a programming bug. If callers handle the unchecked exception,
    * they may check the interrupted bit to see if the pool was interrupted.
    *
-   * @param interruptWorkers if true, interrupt worker threads when main thread gets an interrupt.
-   *        If false, just wait for them to terminate normally.
+   * @param interruptWorkers if true, interrupt worker threads if main thread gets an interrupt or
+   *        if a worker throws a critical error (see {@link #isCriticalError(Throwable)}). If
+   *        false, just wait for them to terminate normally.
    */
   protected void work(boolean interruptWorkers) throws InterruptedException {
     if (concurrent) {
@@ -631,7 +634,7 @@ public class AbstractQueueVisitor {
 
   /**
    * If this returns true, that means the exception {@code e} is critical
-   * and all running actions should be stopped.
+   * and all running actions should be stopped. {@link Error}s are always considered critical.
    *
    * <p>Default value - always false. If different behavior is needed
    * then we should override this method in subclasses.
@@ -640,6 +643,10 @@ public class AbstractQueueVisitor {
    */
   protected boolean isCriticalError(Throwable e) {
     return false;
+  }
+
+  private boolean isCriticalErrorInternal(Throwable e) {
+    return isCriticalError(e) || (e instanceof Error);
   }
 
   private void setRejectedExecutionHandler() {
@@ -658,7 +665,7 @@ public class AbstractQueueVisitor {
    * to stop all jobs inside {@link #awaitTermination(boolean)}.
    */
   private synchronized void markToStopAllJobsIfNeeded(Throwable e) {
-    if (isCriticalError(e) && !jobsMustBeStopped) {
+    if (isCriticalErrorInternal(e) && !jobsMustBeStopped) {
       jobsMustBeStopped = true;
       synchronized (zeroRemainingTasks) {
         zeroRemainingTasks.notify();
