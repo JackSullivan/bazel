@@ -25,7 +25,7 @@ def _compile(ctx, jars):
   cmd = """
 set -e
 mkdir -p {out}_tmp
-{scalac} {scala_opts} {jvm_flags}  -classpath "{jars}" $@ -d {out}_tmp
+{scalac} {scala_opts} {jvm_flags} -classpath "{jars}" $@ -d {out}_tmp
 # Make jar file deterministic by setting the timestamp of files
 touch -t 198001010000 $(find {out}_tmp)
 touch -t 198001010000 {manifest}
@@ -33,8 +33,8 @@ jar cmf {manifest} {out} -C {out}_tmp .
 """
   cmd = cmd.format(
       scalac=_scalac_path,
-      scala_opts = " ".join(ctx.attr.scalacopts),
-      jvm_flags = " ".join(["-J" + flag for flag in ctx.attr.jvm_flags]),
+      scala_opts=" ".join(ctx.attr.scalacopts),
+      jvm_flags=" ".join(["-J" + flag for flag in ctx.attr.jvm_flags]),
       out=ctx.outputs.jar.path,
       manifest=ctx.outputs.manifest.path,
       jars=":".join([j.path for j in jars]))

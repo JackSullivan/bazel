@@ -26,6 +26,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
+import com.google.common.collect.Sets;
 import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
 import com.google.devtools.build.lib.cmdline.PackageIdentifier;
 import com.google.devtools.build.lib.cmdline.TargetParsingException;
@@ -34,6 +35,7 @@ import com.google.devtools.build.lib.collect.CompactHashSet;
 import com.google.devtools.build.lib.events.Event;
 import com.google.devtools.build.lib.events.EventHandler;
 import com.google.devtools.build.lib.graph.Digraph;
+import com.google.devtools.build.lib.packages.BuildFileContainsErrorsException;
 import com.google.devtools.build.lib.packages.NoSuchTargetException;
 import com.google.devtools.build.lib.packages.NoSuchThingException;
 import com.google.devtools.build.lib.packages.Package;
@@ -88,12 +90,6 @@ import javax.annotation.Nullable;
  */
 public class SkyQueryEnvironment extends AbstractBlazeQueryEnvironment<Target> {
 
-  private static final Predicate<Exception> NON_NULL_EXCEPTION = new Predicate<Exception>() {
-    @Override
-    public boolean apply(@Nullable Exception e) {
-      return e != null;
-    }
-  };
   private WalkableGraph graph;
 
   private ImmutableList<TargetPatternKey> universeTargetPatternKeys;
@@ -177,9 +173,20 @@ public class SkyQueryEnvironment extends AbstractBlazeQueryEnvironment<Target> {
 
   private Map<Target, Collection<Target>> makeTargetsMap(Map<SkyKey, Iterable<SkyKey>> input) {
     ImmutableMap.Builder<Target, Collection<Target>> result = ImmutableMap.builder();
+    
+    Map<SkyKey, Target> allTargets = makeTargetsWithAssociations(
+        Sets.newHashSet(Iterables.concat(input.values())));
 
     for (Map.Entry<SkyKey, Target> entry : makeTargetsWithAssociations(input.keySet()).entrySet()) {
-      result.put(entry.getValue(), makeTargets(input.get(entry.getKey())));
+      Iterable<SkyKey> skyKeys = input.get(entry.getKey());
+      Set<Target> targets = CompactHashSet.createWithExpectedSize(Iterables.size(skyKeys));
+      for (SkyKey key : skyKeys) {
+        Target target = allTargets.get(key);
+        if (target != null) {
+          targets.add(target);
+        }
+      }
+      result.put(entry.getValue(), targets);
     }
     return result.build();
   }
@@ -367,6 +374,10 @@ public class SkyQueryEnvironment extends AbstractBlazeQueryEnvironment<Target> {
     try {
       PackageValue packageValue = (PackageValue) graph.getValue(packageKey);
       if (packageValue != null) {
+        Package pkg = packageValue.getPackage();
+        if (pkg.containsErrors()) {
+          throw new BuildFileContainsErrorsException(label.getPackageIdentifier());
+        }
         return packageValue.getPackage().getTarget(label.getName());
       } else {
         throw (NoSuchThingException) Preconditions.checkNotNull(
@@ -458,10 +469,6 @@ public class SkyQueryEnvironment extends AbstractBlazeQueryEnvironment<Target> {
       }
     }
     return result;
-  }
-
-  private Collection<Target> makeTargets(Iterable<SkyKey> keys) {
-    return makeTargetsWithAssociations(keys).values();
   }
 
   private static final Function<SkyKey, Label> SKYKEY_TO_LABEL = new Function<SkyKey, Label>() {
@@ -599,7 +606,10 @@ public class SkyQueryEnvironment extends AbstractBlazeQueryEnvironment<Target> {
     Map<SkyKey, SkyValue> packageValues = graph.getSuccessfulValues(resultKeys);
     ImmutableSet.Builder<Target> result = ImmutableSet.builder();
     for (SkyValue value : packageValues.values()) {
-      result.add(((PackageValue) value).getPackage().getBuildFile());
+      Package pkg = ((PackageValue) value).getPackage();
+      if (!pkg.containsErrors()) {
+        result.add(pkg.getBuildFile());
+      }
     }
     return result.build();
   }

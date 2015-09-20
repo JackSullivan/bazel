@@ -10,7 +10,6 @@ filegroup(
         "//third_party/java/j2objc:srcs",
         "//third_party/java/jarjar:srcs",
         "//third_party/java/jdk/langtools:srcs",
-        "//third_party/java_src/j2objc/jre_emul:srcs",
         "//third_party/py/concurrent:srcs",
         "//third_party/py/gflags:srcs",
         "//third_party/py/mock:srcs",
@@ -255,6 +254,11 @@ filegroup(
 java_import(
     name = "jsr330_inject",
     jars = ["jsr330_inject/javax.inject.jar"],
+)
+
+java_import(
+    name = "maven",
+    jars = glob(["maven/*.jar"]),
 )
 
 java_import(

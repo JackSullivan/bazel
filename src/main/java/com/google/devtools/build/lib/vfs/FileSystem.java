@@ -206,7 +206,7 @@ public abstract class FileSystem {
 
   /**
    * Returns value of the given extended attribute name or null if attribute
-   * does not exist or file system does not support extended attributes.
+   * does not exist or file system does not support extended attributes. Follows symlinks.
    * <p>Default implementation assumes that file system does not support
    * extended attributes and always returns null. Specific file system
    * implementations should override this method if they do provide support
@@ -219,7 +219,7 @@ public abstract class FileSystem {
    *   system does not support extended attributes at all.
    * @throws IOException if the call failed for any other reason.
    */
-  protected byte[] getxattr(Path path, String name, boolean followSymlinks) throws IOException {
+  protected byte[] getxattr(Path path, String name) throws IOException {
     return null;
   }
 
@@ -476,6 +476,17 @@ public abstract class FileSystem {
    * @throws IOException if the contents of the link could not be read for any reason.
    */
   protected abstract PathFragment readSymbolicLink(Path path) throws IOException;
+
+  /**
+   * Returns the target of a symbolic link, under the assumption that the given path is indeed a
+   * symbolic link (this assumption permits efficient implementations). See
+   * {@link Path#readSymbolicLinkUnchecked} for specification.
+   *
+   * @throws IOException if the contents of the link could not be read for any reason.
+   */
+  protected PathFragment readSymbolicLinkUnchecked(Path path) throws IOException {
+    return readSymbolicLink(path);
+  }
 
   /**
    * Returns true iff {@code path} denotes an existing file of any kind. See

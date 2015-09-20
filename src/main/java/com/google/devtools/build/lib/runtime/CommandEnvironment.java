@@ -14,6 +14,7 @@
 
 package com.google.devtools.build.lib.runtime;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.eventbus.EventBus;
@@ -36,8 +37,13 @@ import com.google.devtools.build.lib.vfs.Path;
 import com.google.devtools.common.options.OptionsProvider;
 
 import java.io.IOException;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Encapsulates the state needed for a single command. The environment is dropped when the current
@@ -48,8 +54,9 @@ public final class CommandEnvironment {
   private final Reporter reporter;
   private final EventBus eventBus;
   private final BlazeModule.ModuleEnvironment blazeModuleEnvironment;
+  private final Map<String, String> clientEnv = new HashMap<>();
 
-  private AbruptExitException pendingException;
+  private AtomicReference<AbruptExitException> pendingException = new AtomicReference<>();
 
   private class BlazeModuleEnvironment implements BlazeModule.ModuleEnvironment {
     @Override
@@ -63,8 +70,7 @@ public final class CommandEnvironment {
 
     @Override
     public void exit(AbruptExitException exception) {
-      Preconditions.checkState(pendingException == null);
-      pendingException = exception;
+      pendingException.compareAndSet(null, exception);
     }
   }
 
@@ -98,8 +104,23 @@ public final class CommandEnvironment {
     return blazeModuleEnvironment;
   }
 
+  /**
+   * Return an unmodifiable view of the blaze client's environment when it invoked the current
+   * command.
+   */
   public Map<String, String> getClientEnv() {
-    return runtime.getClientEnv();
+    return Collections.unmodifiableMap(clientEnv);
+  }
+
+  @VisibleForTesting
+  void updateClientEnv(List<Map.Entry<String, String>> clientEnvList, boolean ignoreClientEnv) {
+    Preconditions.checkState(clientEnv.isEmpty());
+
+    Collection<Map.Entry<String, String>> env =
+        ignoreClientEnv ? System.getenv().entrySet() : clientEnvList;
+    for (Map.Entry<String, String> entry : env) {
+      clientEnv.put(entry.getKey(), entry.getValue());
+    }
   }
 
   public PackageManager getPackageManager() {
@@ -154,8 +175,9 @@ public final class CommandEnvironment {
     eventBus.post(new CommandPrecompleteEvent(originalExit));
     // If Blaze did not suffer an infrastructure failure, check for errors in modules.
     ExitCode exitCode = originalExit;
-    if (!originalExit.isInfrastructureFailure() && pendingException != null) {
-      exitCode = pendingException.getExitCode();
+    AbruptExitException exception = pendingException.get();
+    if (!originalExit.isInfrastructureFailure() && exception != null) {
+      exitCode = exception.getExitCode();
     }
     return exitCode;
   }
@@ -168,8 +190,9 @@ public final class CommandEnvironment {
    * the exception this way.
    */
   public void throwPendingException() throws AbruptExitException {
-    if (pendingException != null) {
-      throw pendingException;
+    AbruptExitException exception = pendingException.get();
+    if (exception != null) {
+      throw exception;
     }
   }
 }

@@ -15,7 +15,6 @@ package com.google.devtools.build.lib.syntax;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.collect.nestedset.Order;
 import com.google.devtools.build.lib.vfs.PathFragment;
 
 import java.io.IOException;
@@ -108,14 +107,14 @@ public final class Printer {
     if (o == null) {
       throw new NullPointerException(); // Java null is not a build language value.
 
+    } else if (o instanceof SkylarkValue) {
+      ((SkylarkValue) o).write(buffer, quotationMark);
+
     } else if (o instanceof String) {
       writeString(buffer, (String) o, quotationMark);
 
     } else if (o instanceof Integer || o instanceof Double) {
       append(buffer, o.toString());
-
-    } else if (o == Runtime.NONE) {
-      append(buffer, "None");
 
     } else if (o == Boolean.TRUE) {
       append(buffer, "True");
@@ -125,11 +124,7 @@ public final class Printer {
 
     } else if (o instanceof List<?>) {
       List<?> seq = (List<?>) o;
-      printList(buffer, seq, EvalUtils.isImmutable(seq), quotationMark);
-
-    } else if (o instanceof SkylarkList) {
-      SkylarkList list = (SkylarkList) o;
-      printList(buffer, list.toList(), list.isTuple(), quotationMark);
+      printList(buffer, seq, EvalUtils.isTuple(seq), quotationMark);
 
     } else if (o instanceof Map<?, ?>) {
       Map<?, ?> dict = (Map<?, ?>) o;
@@ -141,43 +136,11 @@ public final class Printer {
       append(buffer, ": ");
       write(buffer, entry.getValue(), quotationMark);
 
-    } else if (o instanceof SkylarkNestedSet) {
-      SkylarkNestedSet set = (SkylarkNestedSet) o;
-      append(buffer, "set(");
-      printList(buffer, set, "[", ", ", "]", null, quotationMark);
-      Order order = set.getOrder();
-      if (order != Order.STABLE_ORDER) {
-        append(buffer, ", order = \"" + order.getName() + "\"");
-      }
-      append(buffer, ")");
-
-    } else if (o instanceof BaseFunction) {
-      BaseFunction func = (BaseFunction) o;
-      append(buffer, "<function " + func.getName() + ">");
-
-    } else if (o instanceof Label) {
-      write(buffer, o.toString(), quotationMark);
-
-    } else if (o instanceof FilesetEntry) {
-           FilesetEntry entry = (FilesetEntry) o;
-      append(buffer, "FilesetEntry(srcdir = ");
-      write(buffer, entry.getSrcLabel().toString(), quotationMark);
-      append(buffer, ", files = ");
-      write(buffer, makeStringList(entry.getFiles()), quotationMark);
-      append(buffer, ", excludes = ");
-      write(buffer, makeList(entry.getExcludes()), quotationMark);
-      append(buffer, ", destdir = ");
-      write(buffer, entry.getDestDir().getPathString(), quotationMark);
-      append(buffer, ", strip_prefix = ");
-      write(buffer, entry.getStripPrefix(), quotationMark);
-      append(buffer, ", symlinks = ");
-      append(buffer, quotationMark);
-      append(buffer, entry.getSymlinkBehavior().toString());
-      append(buffer, quotationMark);
-      append(buffer, ")");
-
     } else if (o instanceof PathFragment) {
       append(buffer, ((PathFragment) o).getPathString());
+
+    } else if (o instanceof Class<?>) {
+      append(buffer, EvalUtils.getDataTypeNameFromClass((Class<?>) o));
 
     } else {
       append(buffer, o.toString());
@@ -206,7 +169,7 @@ public final class Printer {
   // Throughout this file, we transform IOException into AssertionError.
   // During normal operations, we only use in-memory Appendable-s that
   // cannot cause an IOException.
-  private static Appendable append(Appendable buffer, char c) {
+  public static Appendable append(Appendable buffer, char c) {
     try {
       return buffer.append(c);
     } catch (IOException e) {
@@ -214,7 +177,7 @@ public final class Printer {
     }
   }
 
-  private static Appendable append(Appendable buffer, CharSequence s) {
+  public static Appendable append(Appendable buffer, CharSequence s) {
     try {
       return buffer.append(s);
     } catch (IOException e) {
@@ -286,7 +249,7 @@ public final class Printer {
    * @param quotationMark The quotation mark to be used (' or ")
    * @return the Appendable, in fluent style.
    */
-  private static Appendable printList(
+  public static Appendable printList(
       Appendable buffer,
       Iterable<?> list,
       String before,
@@ -357,11 +320,11 @@ public final class Printer {
     return listString(list, before, separator, after, singletonTerminator, SKYLARK_QUOTATION_MARK);
   }
 
-  private static List<?> makeList(Collection<?> list) {
+  public static List<?> makeList(Collection<?> list) {
     return list == null ? Lists.newArrayList() : Lists.newArrayList(list);
   }
 
-  private static List<String> makeStringList(List<Label> labels) {
+  public static List<String> makeStringList(List<Label> labels) {
     if (labels == null) {
       return Collections.emptyList();
     }
