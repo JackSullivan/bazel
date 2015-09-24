@@ -16,23 +16,37 @@
 
 
 _scala_filetype = FileType([".scala"])
+_scala_dir = "/usr/local/scala-2.11.6/"
+_scalac = _scala_dir + "bin/scalac"
+_scala_lib = _scala_dir + "/lib/scala-library.jar"
 
-# TODO(bazel-team): Add local_repository to properly declare the dependency.
-_scala_library_path = "/usr/share/java/scala-library.jar"
-_scalac_path = "/usr/bin/scalac"
+
+def _adjust_resources_path(path):
+  (dir_1,dir_2,rel_path) = path.partition("resources")
+  if rel_path:
+    return dir_1 + dir_2, rel_path
+  (dir_1,dir_2,rel_path) = path.partition("java")
+  if rel_path:
+    return dir_1 + dir_2, rel_path
+  return "", path
 
 def _compile(ctx, jars):
+  res_cmd = ""
+  if len(ctx.files.resources):
+    for f in ctx.files.resources:
+      (c_dir, res_path) = _adjust_resources_path(f.path)
+      change_dir = "-C " + c_dir if c_dir else ""
+      res_cmd = "\njar uf {out} " + change_dir + " " + res_path
   cmd = """
 set -e
 mkdir -p {out}_tmp
 {scalac} {scala_opts} {jvm_flags} -classpath "{jars}" $@ -d {out}_tmp
 # Make jar file deterministic by setting the timestamp of files
-touch -t 198001010000 $(find {out}_tmp)
-touch -t 198001010000 {manifest}
+touch -t 198001010000 $(find .)
 jar cmf {manifest} {out} -C {out}_tmp .
-"""
+""" + res_cmd
   cmd = cmd.format(
-      scalac=_scalac_path,
+      scalac=_scalac,
       scala_opts=" ".join(ctx.attr.scalacopts),
       jvm_flags=" ".join(["-J" + flag for flag in ctx.attr.jvm_flags]),
       out=ctx.outputs.jar.path,
@@ -48,7 +62,7 @@ jar cmf {manifest} {out} -C {out}_tmp .
 
 
 def _write_manifest(ctx):
-  cp = "/usr/share/java/scala-library.jar"
+  cp = _scala_lib
   manifest = "Class-Path: %s\n" % cp
   if getattr(ctx.attr, "main_class", ""):
     manifest += "Main-Class: %s\n" % ctx.attr.main_class
@@ -122,6 +136,7 @@ scala_library = rule(
           non_empty=True),
       "deps": attr.label_list(),
       "data": attr.label_list(allow_files=True, cfg=DATA_CFG),
+      "resources": attr.label_list(allow_files=True),
       "scalacopts": attr.string_list(),
       "jvm_flags": attr.string_list(),
       },
@@ -140,6 +155,7 @@ scala_binary = rule(
           non_empty=True),
       "deps": attr.label_list(),
       "data": attr.label_list(allow_files=True, cfg=DATA_CFG),
+      "resources": attr.label_list(allow_files=True),
       "scalacopts":attr.string_list(),
       "jvm_flags": attr.string_list(),
       },
